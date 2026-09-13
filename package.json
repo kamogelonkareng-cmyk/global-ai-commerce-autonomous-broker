@@ -1,0 +1,19 @@
+{
+  "name": "global-ai-commerce-autonomous-broker",
+  "version": "0.1.0",
+  "description": "MVP AI broker: proxy requests to AI suppliers, with API keys and usage logging",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "NODE_ENV=development node src/index.js"
+  },
+  "author": "kamogelonkareng-cmyk",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^8.0.1",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "openai": "^4.0.0",
+    "uuid": "^9.0.0"
+  }
+}
