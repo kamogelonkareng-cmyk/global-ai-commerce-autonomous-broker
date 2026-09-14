@@ -9,33 +9,63 @@ const stripeBilling = require('./src/billing/stripe');
 
 const PORT = process.env.PORT || 3000;
 
-db.initDB();
+// Validate required environment variables at startup
+const requiredEnvVars = ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'CREATE_API_KEY_SECRET', 'ADMIN_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingEnvVars.length > 0) {
+  console.warn(`⚠️  Missing environment variables: ${missingEnvVars.join(', ')}`);
+  console.warn('The broker may not function correctly. Please set these in .env or your environment.');
+}
+
+try {
+  db.initDB();
+  console.log('✓ Database initialized');
+} catch (err) {
+  console.error('✗ Failed to initialize database:', err.message);
+  process.exit(1);
+}
 
 const app = express();
 app.use(bodyParser.json());
+
+// Global error handler middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'internal_server_error', message: err.message });
+});
 
 app.get('/health', (req, res) => res.json({status: 'ok'}));
 
 // Dev-only: create an API key for an owner. Protect with CREATE_API_KEY_SECRET env var.
 app.post('/v1/create-apikey', async (req, res) => {
-  const secret = process.env.CREATE_API_KEY_SECRET;
-  const provided = req.body.secret;
-  if (!secret || provided !== secret) return res.status(403).json({error: 'forbidden'});
-  const owner = req.body.owner || 'unknown';
-  const key = db.createApiKey(owner);
-  res.json({apiKey: key});
+  try {
+    const secret = process.env.CREATE_API_KEY_SECRET;
+    const provided = req.body.secret;
+    if (!secret || provided !== secret) return res.status(403).json({error: 'forbidden'});
+    const owner = req.body.owner || 'unknown';
+    const key = db.createApiKey(owner);
+    res.json({apiKey: key});
+  } catch (err) {
+    console.error('Error creating API key:', err);
+    res.status(500).json({ error: 'internal_error', message: err.message });
+  }
 });
 
 // Dev-only: top up quota for an API key
 app.post('/v1/topup', async (req, res) => {
-  const secret = process.env.CREATE_API_KEY_SECRET;
-  const provided = req.body.secret;
-  if (!secret || provided !== secret) return res.status(403).json({error: 'forbidden'});
-  const key = req.body.apiKey;
-  const amount = parseInt(req.body.amount || '0', 10);
-  if (!key || amount <= 0) return res.status(400).json({error: 'apiKey and positive amount required'});
-  db.topUpQuota(key, amount);
-  res.json({ok: true});
+  try {
+    const secret = process.env.CREATE_API_KEY_SECRET;
+    const provided = req.body.secret;
+    if (!secret || provided !== secret) return res.status(403).json({error: 'forbidden'});
+    const key = req.body.apiKey;
+    const amount = parseInt(req.body.amount || '0', 10);
+    if (!key || amount <= 0) return res.status(400).json({error: 'apiKey and positive amount required'});
+    db.topUpQuota(key, amount);
+    res.json({ok: true});
+  } catch (err) {
+    console.error('Error topping up quota:', err);
+    res.status(500).json({ error: 'internal_error', message: err.message });
+  }
 });
 
 // Create a Stripe Checkout Session to purchase a subscription / quota.
@@ -46,8 +76,8 @@ app.post('/v1/create-checkout-session', async (req, res) => {
     const session = await stripeBilling.createCheckoutSession(apiKey, priceId, req.protocol + '://' + req.get('host'));
     res.json({ url: session.url });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'checkout_error' });
+    console.error('Checkout error:', err);
+    res.status(500).json({ error: 'checkout_error', message: err.message });
   }
 });
 
@@ -56,7 +86,7 @@ app.post('/v1/stripe-webhook', express.raw({ type: 'application/json' }), async 
   try {
     await stripeBilling.handleWebhook(req, res);
   } catch (err) {
-    console.error('stripe webhook error', err);
+    console.error('Stripe webhook error:', err);
     res.status(400).send(`Webhook Error: ${err.message}`);
   }
 });
@@ -99,34 +129,68 @@ app.post('/v1/broker', apiKeyAuth, async (req, res) => {
 
     res.json({reply: result, usageEstimate});
   } catch (err) {
-    console.error(err);
-    res.status(500).json({error: 'broker_error'});
+    console.error('Broker error:', err);
+    res.status(500).json({error: 'broker_error', message: err.message});
   }
 });
 
 // View usage for the calling API key (dev/admin)
 app.get('/v1/usage', apiKeyAuth, (req, res) => {
-  const rows = db.getUsageForKey(req.apiKey);
-  res.json({usage: rows});
+  try {
+    const rows = db.getUsageForKey(req.apiKey);
+    res.json({usage: rows});
+  } catch (err) {
+    console.error('Error fetching usage:', err);
+    res.status(500).json({ error: 'internal_error', message: err.message });
+  }
 });
 
 // ADMIN dashboard (very small HTML) protected by ADMIN_SECRET env var
 app.get('/admin/apis', (req, res) => {
-  const adminSecret = process.env.ADMIN_SECRET;
-  const provided = req.headers['x-admin-secret'] || req.query.admin_secret;
-  if (!adminSecret || provided !== adminSecret) return res.status(403).send('forbidden');
-  const keys = db.getAllApiKeys();
-  res.json({ apiKeys: keys });
+  try {
+    const adminSecret = process.env.ADMIN_SECRET;
+    const provided = req.headers['x-admin-secret'] || req.query.admin_secret;
+    if (!adminSecret || provided !== adminSecret) return res.status(403).send('forbidden');
+    const keys = db.getAllApiKeys();
+    res.json({ apiKeys: keys });
+  } catch (err) {
+    console.error('Error fetching API keys:', err);
+    res.status(500).json({ error: 'internal_error', message: err.message });
+  }
 });
 
 app.get('/admin/usage/:apiKey', (req, res) => {
-  const adminSecret = process.env.ADMIN_SECRET;
-  const provided = req.headers['x-admin-secret'] || req.query.admin_secret;
-  if (!adminSecret || provided !== adminSecret) return res.status(403).send('forbidden');
-  const usage = db.getUsageForKey(req.params.apiKey);
-  res.json({ usage });
+  try {
+    const adminSecret = process.env.ADMIN_SECRET;
+    const provided = req.headers['x-admin-secret'] || req.query.admin_secret;
+    if (!adminSecret || provided !== adminSecret) return res.status(403).send('forbidden');
+    const usage = db.getUsageForKey(req.params.apiKey);
+    res.json({ usage });
+  } catch (err) {
+    console.error('Error fetching usage:', err);
+    res.status(500).json({ error: 'internal_error', message: err.message });
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`Broker listening on port ${PORT}`);
+// Graceful error handling for unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
+const server = app.listen(PORT, () => {
+  console.log(`✓ Broker listening on port ${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
