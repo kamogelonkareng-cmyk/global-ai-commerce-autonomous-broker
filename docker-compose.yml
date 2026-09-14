@@ -7,23 +7,12 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      PORT: 3000
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-      CREATE_API_KEY_SECRET: ${CREATE_API_KEY_SECRET}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID}
+      PAYPAL_SECRET: ${PAYPAL_SECRET}
       ADMIN_SECRET: ${ADMIN_SECRET}
-      DB_PATH: /app/data/data.sqlite
+      BASE_URL: http://localhost:3000
+      PORT: 3000
     volumes:
-      - broker_data:/app/data
+      - ./broker.db:/app/broker.db
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-
-volumes:
-  broker_data:
-    driver: local
