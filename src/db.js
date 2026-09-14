@@ -1,146 +1,241 @@
 const Database = require('better-sqlite3');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data.sqlite');
-let db;
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'broker.db');
+const db = new Database(DB_PATH);
+
+db.pragma('journal_mode = WAL');
 
 function initDB() {
-  try {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
+  // API Keys & Subscriptions
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      key TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      subscription_status TEXT DEFAULT 'inactive',
+      quota_remaining INTEGER DEFAULT 0
+    );
+  `);
 
-    db.prepare(`CREATE TABLE IF NOT EXISTS apikeys (
-      api_key TEXT PRIMARY KEY,
-      owner TEXT,
-      created_at INTEGER,
-      stripe_customer_id TEXT,
-      subscription_status TEXT,
-      quota_limit INTEGER DEFAULT 10000,
-      quota_remaining INTEGER DEFAULT 10000
-    )`).run();
-
-    db.prepare(`CREATE TABLE IF NOT EXISTS usage (
-      id TEXT PRIMARY KEY,
-      api_key TEXT,
+  // Usage logs
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS usage_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key TEXT NOT NULL,
       prompt TEXT,
-      usage_estimate REAL,
-      created_at INTEGER
-    )`).run();
+      response TEXT,
+      tokens_used INTEGER,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (api_key) REFERENCES api_keys(key)
+    );
+  `);
 
-    // Create index for faster queries
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_usage_api_key ON usage(api_key)`).run();
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_apikeys_owner ON apikeys(owner)`).run();
+  // Deal tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deals (
+      id TEXT PRIMARY KEY,
+      buyer_id TEXT NOT NULL,
+      seller_id TEXT NOT NULL,
+      description TEXT,
+      proposed_amount REAL,
+      status TEXT DEFAULT 'pending',
+      payment_id TEXT,
+      payer_id TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
-    console.log('✓ Database initialized successfully');
-  } catch (err) {
-    console.error('✗ Database initialization failed:', err);
-    throw err;
-  }
+  // Commission tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS commissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deal_id TEXT NOT NULL,
+      buyer_id TEXT,
+      seller_id TEXT,
+      deal_amount REAL,
+      commission_amount REAL,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      paid_at DATETIME,
+      FOREIGN KEY (deal_id) REFERENCES deals(id)
+    );
+  `);
+
+  // Deal negotiations
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_negotiations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deal_id TEXT NOT NULL,
+      party TEXT,
+      message TEXT,
+      ai_response TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (deal_id) REFERENCES deals(id)
+    );
+  `);
 }
 
+// API Key functions
 function createApiKey(owner) {
-  try {
-    const key = uuidv4();
-    const stmt = db.prepare('INSERT INTO apikeys(api_key, owner, created_at, subscription_status, quota_limit, quota_remaining) VALUES (?, ?, ?, ?, ?, ?)');
-    stmt.run(key, owner, Date.now(), 'inactive', 10000, 10000);
-    return key;
-  } catch (err) {
-    console.error('Error creating API key:', err);
-    throw err;
-  }
+  const key = `sk-${uuidv4()}`;
+  const stmt = db.prepare(`
+    INSERT INTO api_keys (key, owner, subscription_status, quota_remaining)
+    VALUES (?, ?, 'active', 1000)
+  `);
+  stmt.run(key, owner);
+  return key;
 }
 
 function getApiKeyRow(key) {
-  try {
-    return db.prepare('SELECT * FROM apikeys WHERE api_key = ?').get(key);
-  } catch (err) {
-    console.error('Error fetching API key:', err);
-    throw err;
-  }
-}
-
-function logUsage(apiKey, prompt, usageEstimate) {
-  try {
-    const id = uuidv4();
-    const stmt = db.prepare('INSERT INTO usage(id, api_key, prompt, usage_estimate, created_at) VALUES (?, ?, ?, ?, ?)');
-    stmt.run(id, apiKey, prompt, usageEstimate || 0, Date.now());
-  } catch (err) {
-    console.error('Error logging usage:', err);
-    throw err;
-  }
-}
-
-function getUsageForKey(apiKey) {
-  try {
-    return db.prepare('SELECT id, prompt, usage_estimate, created_at FROM usage WHERE api_key = ? ORDER BY created_at DESC LIMIT 100').all(apiKey);
-  } catch (err) {
-    console.error('Error fetching usage:', err);
-    throw err;
-  }
+  const stmt = db.prepare('SELECT * FROM api_keys WHERE key = ?');
+  return stmt.get(key);
 }
 
 function getAllApiKeys() {
-  try {
-    return db.prepare('SELECT api_key, owner, created_at, subscription_status, quota_limit, quota_remaining FROM apikeys ORDER BY created_at DESC').all();
-  } catch (err) {
-    console.error('Error fetching all API keys:', err);
-    throw err;
-  }
+  const stmt = db.prepare('SELECT key, owner, subscription_status, quota_remaining FROM api_keys');
+  return stmt.all();
 }
 
-function setStripeCustomerId(apiKey, customerId) {
-  try {
-    return db.prepare('UPDATE apikeys SET stripe_customer_id = ? WHERE api_key = ?').run(customerId, apiKey);
-  } catch (err) {
-    console.error('Error setting Stripe customer ID:', err);
-    throw err;
-  }
+function topUpQuota(key, amount) {
+  const stmt = db.prepare(`
+    UPDATE api_keys SET quota_remaining = quota_remaining + ?
+    WHERE key = ?
+  `);
+  stmt.run(amount, key);
 }
 
-function setSubscriptionStatus(apiKey, status) {
-  try {
-    return db.prepare('UPDATE apikeys SET subscription_status = ? WHERE api_key = ?').run(status, apiKey);
-  } catch (err) {
-    console.error('Error setting subscription status:', err);
-    throw err;
-  }
+function consumeQuota(key, amount) {
+  const stmt = db.prepare(`
+    UPDATE api_keys SET quota_remaining = quota_remaining - ?
+    WHERE key = ?
+  `);
+  stmt.run(amount, key);
 }
 
-function topUpQuota(apiKey, amount) {
-  try {
-    const row = getApiKeyRow(apiKey);
-    if (!row) return null;
-    const newRemaining = (row.quota_remaining || 0) + amount;
-    return db.prepare('UPDATE apikeys SET quota_remaining = ? WHERE api_key = ?').run(newRemaining, apiKey);
-  } catch (err) {
-    console.error('Error topping up quota:', err);
-    throw err;
-  }
+// Usage logging
+function logUsage(apiKey, prompt, tokensUsed, response = null) {
+  const stmt = db.prepare(`
+    INSERT INTO usage_logs (api_key, prompt, response, tokens_used)
+    VALUES (?, ?, ?, ?)
+  `);
+  stmt.run(apiKey, prompt, response, tokensUsed);
 }
 
-function consumeQuota(apiKey, amount) {
-  try {
-    const row = getApiKeyRow(apiKey);
-    if (!row) return null;
-    const remaining = (row.quota_remaining || 0) - amount;
-    const newRemaining = Math.max(0, remaining);
-    return db.prepare('UPDATE apikeys SET quota_remaining = ? WHERE api_key = ?').run(newRemaining, apiKey);
-  } catch (err) {
-    console.error('Error consuming quota:', err);
-    throw err;
-  }
+function getUsageForKey(apiKey) {
+  const stmt = db.prepare(`
+    SELECT prompt, response, tokens_used, timestamp FROM usage_logs
+    WHERE api_key = ?
+    ORDER BY timestamp DESC
+    LIMIT 50
+  `);
+  return stmt.all(apiKey);
+}
+
+// Deal functions
+function createDeal(buyerId, sellerId, description, proposedAmount) {
+  const dealId = `deal-${uuidv4()}`;
+  const stmt = db.prepare(`
+    INSERT INTO deals (id, buyer_id, seller_id, description, proposed_amount, status)
+    VALUES (?, ?, ?, ?, ?, 'open')
+  `);
+  stmt.run(dealId, buyerId, sellerId, description, proposedAmount);
+  return dealId;
+}
+
+function getDeal(dealId) {
+  const stmt = db.prepare('SELECT * FROM deals WHERE id = ?');
+  return stmt.get(dealId);
+}
+
+function updateDealStatus(dealId, status, paymentId = null, payerId = null) {
+  const stmt = db.prepare(`
+    UPDATE deals SET status = ?, payment_id = ?, payer_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  stmt.run(status, paymentId, payerId, dealId);
+}
+
+function getAllDeals() {
+  const stmt = db.prepare(`
+    SELECT id, buyer_id, seller_id, description, proposed_amount, status, created_at
+    FROM deals
+    ORDER BY created_at DESC
+    LIMIT 100
+  `);
+  return stmt.all();
+}
+
+// Commission functions
+function logDealCommission(dealId, buyerId, sellerId, dealAmount, commissionAmount, status = 'pending') {
+  const stmt = db.prepare(`
+    INSERT INTO commissions (deal_id, buyer_id, seller_id, deal_amount, commission_amount, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(dealId, buyerId, sellerId, dealAmount, commissionAmount, status);
+}
+
+function getCommissionsByDeal(dealId) {
+  const stmt = db.prepare('SELECT * FROM commissions WHERE deal_id = ?');
+  return stmt.all(dealId);
+}
+
+function getTotalCommissions() {
+  const stmt = db.prepare(`
+    SELECT 
+      COUNT(*) as total_deals,
+      SUM(commission_amount) as total_commission,
+      SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END) as paid_commission
+    FROM commissions
+  `);
+  return stmt.get();
+}
+
+function updateCommissionStatus(dealId, status) {
+  const stmt = db.prepare(`
+    UPDATE commissions SET status = ?, paid_at = CASE WHEN ? = 'paid' THEN CURRENT_TIMESTAMP ELSE paid_at END
+    WHERE deal_id = ?
+  `);
+  stmt.run(status, status, dealId);
+}
+
+// Negotiation logging
+function logNegotiation(dealId, party, message, aiResponse) {
+  const stmt = db.prepare(`
+    INSERT INTO deal_negotiations (deal_id, party, message, ai_response)
+    VALUES (?, ?, ?, ?)
+  `);
+  stmt.run(dealId, party, message, aiResponse);
+}
+
+function getNegotiationHistory(dealId) {
+  const stmt = db.prepare(`
+    SELECT party, message, ai_response, created_at FROM deal_negotiations
+    WHERE deal_id = ?
+    ORDER BY created_at ASC
+  `);
+  return stmt.all(dealId);
 }
 
 module.exports = {
   initDB,
   createApiKey,
   getApiKeyRow,
+  getAllApiKeys,
+  topUpQuota,
+  consumeQuota,
   logUsage,
   getUsageForKey,
-  getAllApiKeys,
-  setStripeCustomerId,
-  setSubscriptionStatus,
-  topUpQuota,
-  consumeQuota
+  createDeal,
+  getDeal,
+  updateDealStatus,
+  getAllDeals,
+  logDealCommission,
+  getCommissionsByDeal,
+  getTotalCommissions,
+  updateCommissionStatus,
+  logNegotiation,
+  getNegotiationHistory,
 };

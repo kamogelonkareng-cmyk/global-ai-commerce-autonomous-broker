@@ -1,7 +1,7 @@
 {
   "name": "global-ai-commerce-autonomous-broker",
-  "version": "0.2.0",
-  "description": "MVP AI broker: proxy requests to AI suppliers, with API keys, usage logging, billing, and admin dashboard",
+  "version": "0.3.0",
+  "description": "AI-powered deal broker: autonomously negotiates and closes deals between parties, earning 3% commission via PayPal",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -11,6 +11,7 @@
   "author": "kamogelonkareng-cmyk",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.6.0",
     "better-sqlite3": "^8.0.1",
     "body-parser": "^1.20.2",
     "dotenv": "^16.0.0",
