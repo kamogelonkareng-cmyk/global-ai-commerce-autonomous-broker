@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Deal Broker Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-left h1 {
+      font-size: 28px;
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .header-left p {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .earnings {
+      text-align: right;
+    }
+
+    .earnings h2 {
+      font-size: 32px;
+      color: #667eea;
+      margin-bottom: 5px;
+    }
+
+    .earnings p {
+      color: #999;
+      font-size: 12px;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    @media (max-width: 768px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+      header {
+        flex-direction: column;
+        text-align: center;
+      }
+      .header-left, .earnings {
+        margin-bottom: 20px;
+      }
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+
+    .card h2 {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .stat {
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #999;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .deals-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .deal-item {
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .deal-item:hover {
+      background: #f0f2f5;
+      transform: translateX(4px);
+    }
+
+    .deal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .deal-title {
+      font-weight: 600;
+      color: #333;
+      font-size: 14px;
+    }
+
+    .deal-amount {
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .deal-status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-proposed {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+
+    .status-processing {
+      background: #fff3e0;
+      color: #f57c00;
+    }
+
+    .status-completed {
+      background: #e8f5e9;
+      color: #388e3c;
+    }
+
+    .deal-meta {
+      font-size: 12px;
+      color: #999;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+    }
+
+    .empty-state svg {
+      width: 60px;
+      height: 60px;
+      opacity: 0.3;
+      margin-bottom: 15px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #999;
+    }
+
+    .alert {
+      padding: 12px 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+
+    .alert-success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border-left: 4px solid #2e7d32;
+    }
+
+    .alert-error {
+      background: #ffebee;
+      color: #c62828;
+      border-left: 4px solid #c62828;
+    }
+
+    .alert-info {
+      background: #e3f2fd;
+      color: #1565c0;
+      border-left: 4px solid #1565c0;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .tab {
+      padding: 12px 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: #999;
+      border-bottom: 3px solid transparent;
+      transition: all 0.3s;
+    }
+
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .commission-icon {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      background: #e3f2fd;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 10px;
+      font-size: 20px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    @media (max-width: 600px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .refresh-btn {
+      background: #f0f0f0;
+      color: #333;
+      padding: 8px 16px;
+      font-size: 12px;
+      width: auto;
+      margin-left: 10px;
+    }
+
+    .refresh-btn:hover {
+      background: #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <h1>🤖 AI Deal Broker</h1>
+        <p>Autonomous negotiation & commission tracking</p>
+      </div>
+      <div class="earnings">
+        <h2 id="totalEarnings">$0.00</h2>
+        <p>Total Commissions</p>
+      </div>
+    </header>
+
+    <div class="dashboard">
+      <!-- Stats Card -->
+      <div class="card">
+        <h2>📊 Earnings Overview</h2>
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="stat-label">Total Deals</div>
+            <div class="stat-value" id="totalDeals">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value" id="completedDeals">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Total Commission</div>
+            <div class="stat-value" id="totalCommission">$0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Paid Out</div>
+            <div class="stat-value" id="paidCommission">$0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Create Deal Card -->
+      <div class="card">
+        <h2>✨ Create New Deal</h2>
+        <form id="dealForm">
+          <div class="form-group">
+            <label for="buyerId">Buyer ID</label>
+            <input type="text" id="buyerId" placeholder="buyer_001" required>
+          </div>
+          <div class="form-group">
+            <label for="sellerId">Seller ID</label>
+            <input type="text" id="sellerId" placeholder="seller_001" required>
+          </div>
+          <div class="form-group">
+            <label for="description">Deal Description</label>
+            <textarea id="description" placeholder="e.g., Website redesign project" required></textarea>
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="amount">Estimated Amount ($)</label>
+              <input type="number" id="amount" placeholder="1000" step="0.01" required>
+            </div>
+            <div class="form-group">
+              <label for="commission">Est. Commission (3%)</label>
+              <input type="text" id="commission" readonly disabled>
+            </div>
+          </div>
+          <button type="submit">🚀 Create Deal</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Deals & Activity -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">📋 Active Deals</h2>
+        <button class="refresh-btn" onclick="refreshDeals()">🔄 Refresh</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('all')">All Deals</button>
+        <button class="tab" onclick="switchTab('proposed')">Proposed</button>
+        <button class="tab" onclick="switchTab('processing')">Processing</button>
+        <button class="tab" onclick="switchTab('completed')">Completed</button>
+      </div>
+
+      <div id="all" class="tab-content active">
+        <div id="dealsList" class="deals-list">
+          <div class="empty-state">
+            <p>No deals yet. Create one above to get started!</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="proposed" class="tab-content">
+        <div id="proposedList" class="deals-list">
+          <div class="empty-state"><p>No proposed deals</p></div>
+        </div>
+      </div>
+
+      <div id="processing" class="tab-content">
+        <div id="processingList" class="deals-list">
+          <div class="empty-state"><p>No processing deals</p></div>
+        </div>
+      </div>
+
+      <div id="completed" class="tab-content">
+        <div id="completedList" class="deals-list">
+          <div class="empty-state"><p>No completed deals</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notifications -->
+    <div id="notifications" style="margin-top: 20px;"></div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+
+    // Calculate commission on amount change
+    document.getElementById('amount').addEventListener('change', function() {
+      const amount = parseFloat(this.value) || 0;
+      const commission = (amount * 0.03).toFixed(2);
+      document.getElementById('commission').value = `$${commission}`;
+    });
+
+    // Handle form submission
+    document.getElementById('dealForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const buyerId = document.getElementById('buyerId').value;
+      const sellerId = document.getElementById('sellerId').value;
+      const description = document.getElementById('description').value;
+      const amount = parseFloat(document.getElementById('amount').value);
+
+      try {
+        const response = await fetch(`${API_BASE}/v1/deals/propose`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            buyerId,
+            sellerId,
+            description,
+            estimatedAmount: amount,
+            buyerProfile: { id: buyerId },
+            sellerProfile: { id: sellerId }
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          showNotification(`✅ Deal created! ID: ${data.dealId}`, 'success');
+          document.getElementById('dealForm').reset();
+          refreshDeals();
+        } else {
+          showNotification(`❌ Error: ${data.message}`, 'error');
+        }
+      } catch (err) {
+        showNotification(`❌ Failed to create deal: ${err.message}`, 'error');
+      }
+    });
+
+    // Refresh earnings and deals
+    async function refreshEarnings() {
+      try {
+        const response = await fetch(`${API_BASE}/v1/commissions/summary`);
+        const data = await response.json();
+        
+        document.getElementById('totalEarnings').textContent = `$${(data.totalCommission || 0).toFixed(2)}`;
+        document.getElementById('totalDeals').textContent = data.totalDeals || 0;
+        document.getElementById('totalCommission').textContent = `$${(data.totalCommission || 0).toFixed(2)}`;
+        document.getElementById('paidCommission').textContent = `$${(data.paidCommission || 0).toFixed(2)}`;
+      } catch (err) {
+        console.error('Failed to refresh earnings:', err);
+      }
+    }
+
+    async function refreshDeals() {
+      try {
+        const response = await fetch(`${API_BASE}/v1/deals`);
+        const data = await response.json();
+        renderDeals(data.deals || []);
+      } catch (err) {
+        console.error('Failed to refresh deals:', err);
+      }
+    }
+
+    function renderDeals(deals) {
+      const allList = document.getElementById('dealsList');
+      const proposedList = document.getElementById('proposedList');
+      const processingList = document.getElementById('processingList');
+      const completedList = document.getElementById('completedList');
+
+      allList.innerHTML = '';
+      proposedList.innerHTML = '';
+      processingList.innerHTML = '';
+      completedList.innerHTML = '';
+
+      if (deals.length === 0) {
+        allList.innerHTML = '<div class="empty-state"><p>No deals yet. Create one above!</p></div>';
+        proposedList.innerHTML = '<div class="empty-state"><p>No proposed deals</p></div>';
+        processingList.innerHTML = '<div class="empty-state"><p>No processing deals</p></div>';
+        completedList.innerHTML = '<div class="empty-state"><p>No completed deals</p></div>';
+        return;
+      }
+
+      deals.forEach(deal => {
+        const dealEl = createDealElement(deal);
+        allList.appendChild(dealEl.cloneNode(true));
+
+        if (deal.status === 'proposed') {
+          proposedList.appendChild(dealEl);
+        } else if (deal.status === 'processing') {
+          processingList.appendChild(dealEl.cloneNode(true));
+        } else if (deal.status === 'completed') {
+          completedList.appendChild(dealEl.cloneNode(true));
+        }
+      });
+
+      if (proposedList.children.length === 0) proposedList.innerHTML = '<div class="empty-state"><p>No proposed deals</p></div>';
+      if (processingList.children.length === 0) processingList.innerHTML = '<div class="empty-state"><p>No processing deals</p></div>';
+      if (completedList.children.length === 0) completedList.innerHTML = '<div class="empty-state"><p>No completed deals</p></div>';
+    }
+
+    function createDealElement(deal) {
+      const el = document.createElement('div');
+      el.className = 'deal-item';
+      el.onclick = () => viewDealDetails(deal.id);
+      
+      const commission = (deal.proposed_amount * 0.03).toFixed(2);
+      const statusClass = `status-${deal.status}`;
+      
+      el.innerHTML = `
+        <div class="deal-header">
+          <div>
+            <div class="deal-title">${deal.description}</div>
+            <div class="deal-meta">${deal.buyer_id} → ${deal.seller_id}</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="deal-amount">$${deal.proposed_amount}</div>
+            <div style="font-size: 11px; color: #667eea; font-weight: 600;">💰 $${commission}</div>
+          </div>
+        </div>
+        <div>
+          <span class="deal-status ${statusClass}">${deal.status}</span>
+        </div>
+      `;
+      return el;
+    }
+
+    async function viewDealDetails(dealId) {
+      try {
+        const response = await fetch(`${API_BASE}/v1/deals/${dealId}`);
+        const data = await response.json();
+        showNotification(`📋 Deal: ${data.deal.description}\n💰 Amount: $${data.deal.proposed_amount}\n📊 Status: ${data.deal.status}`, 'info');
+      } catch (err) {
+        showNotification(`❌ Failed to fetch deal: ${err.message}`, 'error');
+      }
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(tab).classList.add('active');
+    }
+
+    function showNotification(message, type = 'info') {
+      const container = document.getElementById('notifications');
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type}`;
+      alert.textContent = message;
+      container.appendChild(alert);
+      setTimeout(() => alert.remove(), 5000);
+    }
+
+    // Load data on page load
+    refreshEarnings();
+    refreshDeals();
+
+    // Refresh every 10 seconds
+    setInterval(() => {
+      refreshEarnings();
+      refreshDeals();
+    }, 10000);
+  </script>
+</body>
+</html>
